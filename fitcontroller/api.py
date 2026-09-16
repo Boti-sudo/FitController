@@ -115,6 +115,7 @@ async def handle_day(request: web.Request) -> web.Response:
             "workout_title": plan["workout_title"],
             "day_title": plan["day_title"],
             "previous_comment": last["comment"] if last else None,
+            "previous_finished_at": last["finished_at"] if last else None,
             "exercises": [
                 {
                     "exercise_id": exercise["exercise_id"],
@@ -265,7 +266,11 @@ async def cors_middleware(request: web.Request, handler):
         response = await handler(request)
 
     response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Telegram-Init-Data"
+    # X-Pinggy-No-Screen шлёт мини-апп, чтобы туннель не подсунул страницу-заглушку;
+    # незаявленный здесь заголовок браузер зарубит ещё на preflight.
+    response.headers["Access-Control-Allow-Headers"] = (
+        "Content-Type, X-Telegram-Init-Data, X-Pinggy-No-Screen"
+    )
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     response.headers["Access-Control-Max-Age"] = "86400"
     return response
