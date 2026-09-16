@@ -195,15 +195,19 @@ async def handle_finish(request: web.Request) -> web.Response:
         key = (raw.get("exercise_id"), raw.get("set_number"))
         if key not in known:
             raise ApiError(400, "подход не из программы этого дня")
+        # Подход без веса — дыра в журнале: следующая тренировка покажет 0
+        # вместо реального веса. Мини-апп такое не отправляет, но запрос мог
+        # прийти и от старой версии страницы, осевшей в кэше Telegram.
         weight = raw.get("weight_kg")
+        if weight is None:
+            raise ApiError(400, "у подхода не указан вес")
+
         sets.append(
             {
                 "exercise_id": key[0],
                 "set_number": key[1],
                 "reps": known[key],
-                "weight_kg": (
-                    None if weight is None else round(_number(weight, "вес", 0, MAX_SET_WEIGHT), 1)
-                ),
+                "weight_kg": round(_number(weight, "вес", 0, MAX_SET_WEIGHT), 1),
             }
         )
 
