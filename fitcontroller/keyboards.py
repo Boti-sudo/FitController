@@ -118,7 +118,7 @@ def archive_keyboard(workouts: list[dict]) -> InlineKeyboardMarkup:
 def create_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🤖 Сгенерировать через ИИ", callback_data="create:ai")],
+            [InlineKeyboardButton(text="🤖 Сгенерировать через ИИ(Еще нет)", callback_data="create:ai")],
             [InlineKeyboardButton(text="✍️ Создать самому", callback_data="create:manual")],
             _back("menu:main"),
         ]
@@ -128,7 +128,7 @@ def create_keyboard() -> InlineKeyboardMarkup:
 def manual_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="📷 Добавить фото", callback_data="create:photo")],
+            [InlineKeyboardButton(text="📷 Добавить фото(Еще нет)", callback_data="create:photo")],
             [InlineKeyboardButton(text="✍️ Создать самому", callback_data="create:miniapp")],
             _back("menu:create"),
         ]

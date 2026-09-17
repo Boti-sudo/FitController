@@ -76,11 +76,10 @@ ORDER BY e.position, ss.set_number
 
 
 # Незакрытая тренировка этого дня: мини-апп могли закрыть на середине.
-# Окно в 12 часов — чтобы забытая позавчера сессия не подхватывалась как текущая.
+# Сроком не ограничиваем — тренировку закрывает только сам человек.
 SELECT_ACTIVE_SESSION = """
 SELECT * FROM workout_sessions
 WHERE day_id = ? AND user_id = ? AND finished_at IS NULL
-  AND started_at >= datetime('now', '-12 hours')
 ORDER BY started_at DESC
 LIMIT 1
 """
@@ -465,6 +464,7 @@ async def get_latest_body_weight(user_id: int) -> dict | None:
 
 
 # Незакрытые тренировки пользователя: на них вешается кнопка «продолжить».
+# Висят до тех пор, пока человек сам не закроет — и блокируют новые.
 SELECT_OPEN_SESSIONS = """
 SELECT s.session_id, s.started_at, s.day_id,
        d.title AS day_title, w.workout_id, w.title AS workout_title
@@ -472,7 +472,6 @@ FROM workout_sessions s
 JOIN workout_days d ON d.day_id = s.day_id
 JOIN workouts w     ON w.workout_id = d.workout_id
 WHERE s.user_id = ? AND s.finished_at IS NULL
-  AND s.started_at >= datetime('now', '-12 hours')
 ORDER BY s.started_at DESC
 """
 
