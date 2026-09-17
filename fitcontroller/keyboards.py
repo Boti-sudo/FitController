@@ -173,19 +173,27 @@ def workout_days_keyboard(
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def edit_days_keyboard(days: list[tuple[str, str]]) -> ReplyKeyboardMarkup:
-    """Выбор дня для правки.
+def edit_days_keyboard(days: list[tuple[str, str]], back_to: str) -> InlineKeyboardMarkup:
+    """Выбор дня для правки — инлайн-кнопками.
 
-    Reply-клавиатура, а не инлайн: конструктор возвращает данные через
-    WebApp.sendData(), а он работает только у мини-аппов, открытых отсюда.
+    Мини-апп, открытый с клавиатурной кнопки, не получает initData, а значит
+    не может ни загрузить день, ни сохранить его. Поэтому только инлайн.
     """
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text=f"✏️ {title}", web_app=WebAppInfo(url=url))]
-            for title, url in days
-        ],
-        resize_keyboard=True,
-        one_time_keyboard=True,
+    rows = [
+        [InlineKeyboardButton(text=f"✏️ {title}", web_app=WebAppInfo(url=url))]
+        for title, url in days
+    ]
+    rows.append(_back(back_to))
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def editor_keyboard(url: str, back_to: str) -> InlineKeyboardMarkup:
+    """Кнопка запуска конструктора."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="✍️ Открыть конструктор", web_app=WebAppInfo(url=url))],
+            _back(back_to),
+        ]
     )
 
 

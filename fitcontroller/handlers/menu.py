@@ -23,6 +23,7 @@ from fitcontroller.keyboards import (
     main_menu_keyboard,
     manual_keyboard,
     edit_days_keyboard,
+    editor_keyboard,
     pick_keyboard,
     stats_keyboard,
     support_keyboard,
@@ -228,12 +229,12 @@ async def add_day_to_workout(callback: CallbackQuery) -> None:
     from fitcontroller.handlers.workout import build_editor_url
 
     url = build_editor_url(WEBAPP_URL, API_PUBLIC_URL, workout_id=workout_id)
-    await callback.message.answer(
-        f"Новый день в «{workout['title']}» — жми «Начать заполнение» под полем ввода. "
+    await _render(
+        callback,
+        f"➕ Новый день в «{workout['title']}»\n\n"
         "Название комплекса подставится само, при желании его можно поменять.",
-        reply_markup=webapp_keyboard(url),
+        editor_keyboard(url, f"wk:open:{workout_id}"),
     )
-    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("wk:days:"))
@@ -261,11 +262,11 @@ async def choose_day_to_edit(callback: CallbackQuery) -> None:
         (day["title"], build_editor_url(WEBAPP_URL, API_PUBLIC_URL, day["day_id"]))
         for day in workout["days"]
     ]
-    await callback.message.answer(
-        f"«{workout['title']}» — выбери день под полем ввода, чтобы открыть его в редакторе.",
-        reply_markup=edit_days_keyboard(days),
+    await _render(
+        callback,
+        f"✏️ «{workout['title']}» — выбери день, который правим:",
+        edit_days_keyboard(days, f"wk:open:{workout_id}"),
     )
-    await callback.answer()
 
 
 @router.callback_query(F.data == "wk:archive_list")
@@ -417,28 +418,21 @@ async def stub_photo(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "create:miniapp")
 async def open_editor(callback: CallbackQuery) -> None:
-    if not WEBAPP_URL:
+    if not (WEBAPP_URL and API_PUBLIC_URL):
         await _render(
             callback,
             "✍️ Редактор тренировки\n\n"
-            "Адрес мини-аппа не задан — пропиши WEBAPP_URL в config.py.",
+            "Не задан адрес мини-аппа или сервера — пропиши WEBAPP_URL "
+            "и API_PUBLIC_URL в config.py.",
             back_keyboard("create:manual"),
         )
         return
 
-    from fitcontroller.handlers.workout import build_editor_url, cache_busted
+    from fitcontroller.handlers.workout import build_editor_url
 
-    # С адресом API конструктор покажет существующие папки; без него — только
-    # ручной ввод названия, но заполнить тренировку всё равно можно.
-    url = (
-        build_editor_url(WEBAPP_URL, API_PUBLIC_URL)
-        if API_PUBLIC_URL
-        else cache_busted(WEBAPP_URL)
+    await _render(
+        callback,
+        "✍️ Конструктор тренировки\n\n"
+        "Заполни день и сохрани — тренировка появится в «Моих тренировках».",
+        editor_keyboard(build_editor_url(WEBAPP_URL, API_PUBLIC_URL), "create:manual"),
     )
-
-    await callback.message.answer(
-        "Жми «Начать заполнение» под полем ввода — заполнишь тренировку "
-        "и она сама прилетит сюда.",
-        reply_markup=webapp_keyboard(url),
-    )
-    await callback.answer()

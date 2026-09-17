@@ -16,6 +16,11 @@ from urllib.parse import parse_qsl
 from aiohttp import web
 
 from config import API_HOST, API_PORT, BOT_TOKEN
+from fitcontroller.payloads import (
+    PayloadError,
+    parse_edit_payload,
+    parse_payload,
+)
 from fitcontroller.db import (
     finish_session,
     get_active_session,
@@ -26,9 +31,12 @@ from fitcontroller.db import (
     get_user,
     list_finished_sessions,
     list_open_sessions,
+    SOURCE_USER,
     list_workouts,
     save_progress,
+    save_training_day,
     start_session,
+    update_training_day,
 )
 
 logger = logging.getLogger(__name__)
@@ -343,6 +351,75 @@ async def handle_progress(request: web.Request) -> web.Response:
     return web.json_response({"saved": len(sets)})
 
 
+async def handle_save_days(request: web.Request) -> web.Response:
+    """Конструктор прислал новые тренировочные дни.
+
+    Раньше это приезжало через sendData, но мини-апп с кнопки клавиатуры не
+    получает подписи Telegram и не может ничего прочитать с сервера. Теперь
+    страница открывается инлайн-кнопкой и сохраняет сама.
+    """
+    user_id = current_user_id(request)
+    body = await _json_body(request)
+
+    try:
+        workout_title, days = parse_payload(json.dumps(body))
+    except PayloadError as err:
+        raise ApiError(400, str(err)) from err
+
+    for day in days:
+        await save_training_day(
+            user_id=user_id,
+            workout_title=workout_title,
+            day_title=day["title"],
+            exercises=day["exercises"],
+            source_code=SOURCE_USER,
+        )
+
+    return web.json_response(
+        {
+            "workout_title": workout_title,
+            "days": [
+                {
+                    "title": day["title"],
+                    "exercises": len(day["exercises"]),
+                    "sets": sum(len(exercise["sets"]) for exercise in day["exercises"]),
+                }
+                for day in days
+            ],
+        }
+    )
+
+
+async def handle_update_day(request: web.Request) -> web.Response:
+    """Конструктор прислал правку существующего дня."""
+    user_id = current_user_id(request)
+    body = await _json_body(request)
+
+    try:
+        day_id = int(request.match_info["day_id"])
+    except ValueError as err:
+        raise ApiError(400, "некорректный day_id") from err
+
+    body = dict(body, id=day_id)
+    try:
+        _, day_title, exercises = parse_edit_payload(json.dumps(body))
+    except PayloadError as err:
+        raise ApiError(400, str(err)) from err
+
+    try:
+        await update_training_day(user_id, day_id, day_title, exercises)
+    except PermissionError as err:
+        raise ApiError(404, str(err)) from err
+
+    return web.json_response(
+        {
+            "day_title": day_title,
+            "exercises": len(exercises),
+            "sets": sum(len(exercise["sets"]) for exercise in exercises),
+        }
+    )
+
+
 async def handle_workouts(request: web.Request) -> web.Response:
     """Активные папки — конструктору, чтобы положить день в существующую."""
     user_id = current_user_id(request)
@@ -452,6 +529,8 @@ def create_app() -> web.Application:
     app.router.add_post("/api/session/finish", handle_finish)
     app.router.add_post("/api/session/progress", handle_progress)
     app.router.add_get("/api/workouts", handle_workouts)
+    app.router.add_post("/api/days", handle_save_days)
+    app.router.add_post("/api/day/{day_id}", handle_update_day)
     app.router.add_get("/api/stats", handle_stats)
     app.router.add_get("/api/stats/session/{session_id}", handle_stats_session)
     app.router.add_get("/api/health", lambda request: web.json_response({"ok": True}))
