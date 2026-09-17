@@ -3,6 +3,27 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
 
+
+def _load_env(path: Path) -> None:
+    """Читает KEY=VALUE из .env в переменные окружения.
+
+    Отдельная библиотека ради десяти строк не нужна. Уже заданную переменную
+    не трогаем: то, что передано при запуске, важнее файла.
+    """
+    if not path.exists():
+        return
+
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+_load_env(BASE_DIR / ".env")
+
+# Секрет в коде не держим: он живёт в .env (файл в .gitignore) или в окружении.
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 
 DB_PATH = BASE_DIR / "fitcontroller.db"
