@@ -18,6 +18,7 @@ COMMANDS = [
     BotCommand(command="start", description="Начать"),
     BotCommand(command="profile", description="Мой профиль"),
     BotCommand(command="reset", description="Заполнить анкету заново"),
+    BotCommand(command="support", description="Поддержка"),
 ]
 
 

@@ -4,6 +4,7 @@ import logging
 
 from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest
+from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 
 from config import API_PUBLIC_URL, STATS_WEBAPP_URL, WEBAPP_URL, WORKOUT_WEBAPP_URL
@@ -23,6 +24,7 @@ from fitcontroller.keyboards import (
     manual_keyboard,
     pick_keyboard,
     stats_keyboard,
+    support_keyboard,
     webapp_keyboard,
     workout_days_keyboard,
     workouts_keyboard,
@@ -54,6 +56,14 @@ MANUAL_TEXT = (
 )
 
 SOON_TEXT = "Раздел в разработке — скоро заработает."
+
+
+@router.message(Command("support"))
+async def cmd_support(message: Message) -> None:
+    await message.answer(
+        "Если что-то не работает или есть вопрос — напиши, разберёмся.",
+        reply_markup=support_keyboard(),
+    )
 
 
 async def send_main_menu(message: Message) -> None:

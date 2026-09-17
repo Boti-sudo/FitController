@@ -12,6 +12,9 @@ from fitcontroller.db import GENDERS, GOALS
 
 BTN_BACK = "⬅️ Назад"
 
+# Кнопка ведёт в личку к человеку, а не в бота, — поэтому обычная ссылка.
+SUPPORT_URL = "https://t.me/ItsMyNameq"
+
 
 def genders_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
@@ -182,6 +185,15 @@ def webapp_keyboard(url: str) -> ReplyKeyboardMarkup:
         keyboard=[[KeyboardButton(text="✍️ Начать заполнение", web_app=WebAppInfo(url=url))]],
         resize_keyboard=True,
         one_time_keyboard=True,
+    )
+
+
+def support_keyboard() -> InlineKeyboardMarkup:
+    """Ссылка в личку к человеку, а не callback: бот тут ни при чём."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="💬 Написать в поддержку", url=SUPPORT_URL)]
+        ]
     )
 
 
