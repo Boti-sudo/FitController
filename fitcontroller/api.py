@@ -18,11 +18,13 @@ from aiohttp import web
 from config import API_HOST, API_PORT, BOT_TOKEN
 from fitcontroller.db import (
     finish_session,
+    get_active_session,
     get_day_plan,
     get_last_session,
     get_session,
     get_session_detail,
     list_finished_sessions,
+    save_progress,
     start_session,
 )
 
@@ -110,6 +112,24 @@ async def handle_day(request: web.Request) -> web.Response:
     if plan is None:
         raise ApiError(404, "тренировочный день не найден")
 
+    # Мини-апп могли закрыть посреди тренировки — тогда возвращаем её как есть.
+    active = await get_active_session(day_id, user_id)
+    active_payload = None
+    if active:
+        active_payload = {
+            "session_id": active["session_id"],
+            "started_at": active["started_at"],
+            "body_weight_kg": active["body_weight_kg"],
+            "sets": [
+                {
+                    "exercise_id": item["exercise_id"],
+                    "set_number": item["set_number"],
+                    "weight_kg": item["weight_kg"],
+                }
+                for item in active["sets"]
+            ],
+        }
+
     last = await get_last_session(day_id, user_id)
     previous: dict[tuple[int, int], float] = {}
     if last:
@@ -121,6 +141,7 @@ async def handle_day(request: web.Request) -> web.Response:
             "day_id": plan["day_id"],
             "workout_title": plan["workout_title"],
             "day_title": plan["day_title"],
+            "active_session": active_payload,
             "previous_comment": last["comment"] if last else None,
             "previous_finished_at": last["finished_at"] if last else None,
             "exercises": [
@@ -155,6 +176,15 @@ async def handle_start(request: web.Request) -> web.Response:
         raise ApiError(400, "не указан day_id")
 
     weight = _number(body.get("body_weight_kg"), "вес", MIN_BODY_WEIGHT, MAX_BODY_WEIGHT)
+
+    # Открыл тренировку второй раз, не закрыв первую, — отдаём ту же строку,
+    # иначе в журнале копятся брошенные сессии, а веса разъезжаются по двум.
+    active = await get_active_session(day_id, user_id)
+    if active:
+        logger.info("Возвращаем незакрытую session_id=%s", active["session_id"])
+        return web.json_response(
+            {"session_id": active["session_id"], "started_at": active["started_at"]}
+        )
 
     try:
         started = await start_session(user_id, day_id, round(weight, 1))
@@ -232,6 +262,62 @@ async def handle_finish(request: web.Request) -> web.Response:
         raise ApiError(409, str(err)) from err
 
     return web.json_response({"finished_at": finished_at, "sets": len(sets)})
+
+
+async def handle_progress(request: web.Request) -> web.Response:
+    """Автосохранение: веса складываются в базу, не дожидаясь «Завершить»."""
+    user_id = current_user_id(request)
+    body = await _json_body(request)
+
+    session_id = body.get("session_id")
+    if not isinstance(session_id, int) or isinstance(session_id, bool):
+        raise ApiError(400, "не указан session_id")
+
+    session = await get_session(session_id, user_id)
+    if session is None:
+        raise ApiError(404, "тренировка не найдена")
+
+    plan = await get_day_plan(session["day_id"], user_id)
+    if plan is None:
+        raise ApiError(404, "тренировочный день не найден")
+
+    known = {
+        (exercise["exercise_id"], item["set_number"]): item["reps"]
+        for exercise in plan["exercises"]
+        for item in exercise["sets"]
+    }
+
+    raw_sets = body.get("sets")
+    if not isinstance(raw_sets, list):
+        raise ApiError(400, "подходы пришли не списком")
+
+    sets = []
+    for raw in raw_sets:
+        if not isinstance(raw, dict):
+            raise ApiError(400, "подход пришёл не объектом")
+        key = (raw.get("exercise_id"), raw.get("set_number"))
+        if key not in known:
+            raise ApiError(400, "подход не из программы этого дня")
+
+        # В отличие от завершения, пустой вес здесь нормален: человек ещё в процессе.
+        weight = raw.get("weight_kg")
+        sets.append(
+            {
+                "exercise_id": key[0],
+                "set_number": key[1],
+                "reps": known[key],
+                "weight_kg": (
+                    None if weight is None else round(_number(weight, "вес", 0, MAX_SET_WEIGHT), 1)
+                ),
+            }
+        )
+
+    try:
+        await save_progress(session_id, user_id, sets)
+    except PermissionError as err:
+        raise ApiError(409, str(err)) from err
+
+    return web.json_response({"saved": len(sets)})
 
 
 async def handle_stats(request: web.Request) -> web.Response:
@@ -325,6 +411,7 @@ def create_app() -> web.Application:
     app.router.add_get("/api/day/{day_id}", handle_day)
     app.router.add_post("/api/session/start", handle_start)
     app.router.add_post("/api/session/finish", handle_finish)
+    app.router.add_post("/api/session/progress", handle_progress)
     app.router.add_get("/api/stats", handle_stats)
     app.router.add_get("/api/stats/session/{session_id}", handle_stats_session)
     app.router.add_get("/api/health", lambda request: web.json_response({"ok": True}))

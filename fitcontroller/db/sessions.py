@@ -75,6 +75,17 @@ ORDER BY e.position, ss.set_number
 """
 
 
+# Незакрытая тренировка этого дня: мини-апп могли закрыть на середине.
+# Окно в 12 часов — чтобы забытая позавчера сессия не подхватывалась как текущая.
+SELECT_ACTIVE_SESSION = """
+SELECT * FROM workout_sessions
+WHERE day_id = ? AND user_id = ? AND finished_at IS NULL
+  AND started_at >= datetime('now', '-12 hours')
+ORDER BY started_at DESC
+LIMIT 1
+"""
+
+
 async def get_day_plan(day_id: int, user_id: int) -> dict | None:
     """План тренировочного дня: упражнения с запланированными подходами."""
     async with connect() as db:
@@ -377,3 +388,60 @@ async def get_session_detail(session_id: int, user_id: int) -> dict | None:
     result = dict(session)
     result["exercises"] = exercises
     return result
+
+
+async def get_active_session(day_id: int, user_id: int) -> dict | None:
+    """Открытая, но не завершённая тренировка дня вместе с уже введёнными весами."""
+    async with connect() as db:
+        async with db.execute(SELECT_ACTIVE_SESSION, (day_id, user_id)) as cursor:
+            session = await cursor.fetchone()
+        if session is None:
+            return None
+
+        async with db.execute(SELECT_SESSION_SETS, (session["session_id"],)) as cursor:
+            sets = await cursor.fetchall()
+
+    result = dict(session)
+    result["sets"] = [dict(item) for item in sets]
+    return result
+
+
+async def save_progress(session_id: int, user_id: int, sets: list[dict]) -> None:
+    """Складывает промежуточные веса незавершённой тренировки.
+
+    Пишет в те же session_sets, что и завершение: пустые веса допустимы,
+    потому что человек ещё в процессе. Завершение потом перезапишет строки.
+    """
+    async with connect() as db:
+        async with db.execute(
+            "SELECT finished_at FROM workout_sessions WHERE session_id = ? AND user_id = ?",
+            (session_id, user_id),
+        ) as cursor:
+            row = await cursor.fetchone()
+        if row is None:
+            raise PermissionError("тренировка не найдена")
+        if row["finished_at"]:
+            raise PermissionError("тренировка уже завершена")
+
+        await db.executemany(
+            """
+            INSERT INTO session_sets (session_id, exercise_id, set_number, reps, weight_kg)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(session_id, exercise_id, set_number) DO UPDATE SET
+                weight_kg = excluded.weight_kg,
+                reps      = excluded.reps
+            """,
+            [
+                (
+                    session_id,
+                    item["exercise_id"],
+                    item["set_number"],
+                    item["reps"],
+                    item.get("weight_kg"),
+                )
+                for item in sets
+            ],
+        )
+        await db.commit()
+
+    logger.debug("Progress saved for session_id=%s (%s подходов)", session_id, len(sets))
