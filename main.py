@@ -9,6 +9,7 @@ from config import BOT_TOKEN, LOG_FILE
 from fitcontroller.api import start_api
 from fitcontroller.db import init_db
 from fitcontroller.logging_setup import setup_logging
+from fitcontroller.reminders import reminder_loop
 from fitcontroller.handlers import router
 
 logger = logging.getLogger(__name__)
@@ -34,10 +35,13 @@ async def main() -> None:
     dp = Dispatcher(storage=MemoryStorage())
     dp.include_router(router)
 
+    reminders = asyncio.create_task(reminder_loop(bot))
+
     logger.info("Bot started")
     try:
         await dp.start_polling(bot)
     finally:
+        reminders.cancel()
         await bot.session.close()
         await api_runner.cleanup()
         logger.info("Bot stopped")

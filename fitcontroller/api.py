@@ -10,6 +10,7 @@ import hmac
 import json
 import logging
 import time
+from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qsl
 
 from aiohttp import web
@@ -20,6 +21,8 @@ from fitcontroller.db import (
     get_day_plan,
     get_last_session,
     get_session,
+    get_session_detail,
+    list_finished_sessions,
     start_session,
 )
 
@@ -27,6 +30,10 @@ logger = logging.getLogger(__name__)
 
 # Насколько старым может быть initData: страницу могли открыть и оставить.
 INIT_DATA_TTL = 24 * 3600
+
+# Отдаём сразу максимальный диапазон: переключение недели/месяца/полугода
+# страница делает на своих данных, без похода на сервер.
+STATS_DAYS = 180
 
 MAX_COMMENT = 500
 MAX_SETS = 30
@@ -211,12 +218,43 @@ async def handle_finish(request: web.Request) -> web.Response:
             }
         )
 
+    # Тренировка закрывается целиком: недосланные подходы — та же дыра в журнале,
+    # что и подход без веса, только заметить её потом ещё труднее.
+    # Считаем по ключам, а не по длине списка: один и тот же подход, присланный
+    # дважды, иначе закрыл бы тренировку за соседний и упал бы на UNIQUE при вставке.
+    missing = len(known) - len({(item["exercise_id"], item["set_number"]) for item in sets})
+    if missing > 0:
+        raise ApiError(400, f"не присланы все подходы тренировки (не хватает {missing})")
+
     try:
         finished_at = await finish_session(session_id, user_id, comment, sets)
     except PermissionError as err:
         raise ApiError(409, str(err)) from err
 
     return web.json_response({"finished_at": finished_at, "sets": len(sets)})
+
+
+async def handle_stats(request: web.Request) -> web.Response:
+    """Завершённые тренировки за полгода — сырьё для графика веса и списка."""
+    user_id = current_user_id(request)
+    since = datetime.now(timezone.utc) - timedelta(days=STATS_DAYS)
+
+    sessions = await list_finished_sessions(user_id, since.strftime("%Y-%m-%d %H:%M:%S"))
+    return web.json_response({"days": STATS_DAYS, "sessions": sessions})
+
+
+async def handle_stats_session(request: web.Request) -> web.Response:
+    """Одна тренировка целиком — для кнопки «Посмотреть»."""
+    user_id = current_user_id(request)
+    try:
+        session_id = int(request.match_info["session_id"])
+    except ValueError as err:
+        raise ApiError(400, "некорректный session_id") from err
+
+    detail = await get_session_detail(session_id, user_id)
+    if detail is None:
+        raise ApiError(404, "тренировка не найдена")
+    return web.json_response(detail)
 
 
 async def _json_body(request: web.Request) -> dict:
@@ -287,6 +325,8 @@ def create_app() -> web.Application:
     app.router.add_get("/api/day/{day_id}", handle_day)
     app.router.add_post("/api/session/start", handle_start)
     app.router.add_post("/api/session/finish", handle_finish)
+    app.router.add_get("/api/stats", handle_stats)
+    app.router.add_get("/api/stats/session/{session_id}", handle_stats_session)
     app.router.add_get("/api/health", lambda request: web.json_response({"ok": True}))
     app.router.add_route("OPTIONS", "/api/{tail:.*}", lambda request: web.Response(status=204))
     return app

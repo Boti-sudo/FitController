@@ -138,6 +138,18 @@ CREATE TABLE IF NOT EXISTS session_sets (
 )
 """
 
+# Напоминания о простое. Строка на пользователя: anchor — дата, от которой
+# считаем простой (последняя закрытая тренировка), stage — последнее уже
+# отправленное напоминание. Сходил в зал — anchor сменился, stage обнулился.
+CREATE_REMINDERS = """
+CREATE TABLE IF NOT EXISTS reminders (
+    user_id INTEGER PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+    anchor  TEXT    NOT NULL,
+    stage   INTEGER NOT NULL DEFAULT 0,
+    sent_at TEXT
+)
+"""
+
 TABLES = (
     CREATE_GENDERS,
     CREATE_GOALS,
@@ -149,6 +161,7 @@ TABLES = (
     CREATE_EXERCISE_SETS,
     CREATE_WORKOUT_SESSIONS,
     CREATE_SESSION_SETS,
+    CREATE_REMINDERS,
 )
 
 # Чем наполняем справочники при старте.

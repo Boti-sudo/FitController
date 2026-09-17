@@ -86,11 +86,11 @@ def parse_payload(raw: str) -> tuple[str, list[dict]]:
                 raise PayloadError("упражнение пришло не объектом")
 
             name = _text(raw_exercise.get("n"), "название упражнения", MAX_TITLE)
-            muscle = raw_exercise.get("m")
+            # Группа мышц обязательна: из неё складывается список тренировок в статистике.
             exercises.append(
                 {
                     "name": name,
-                    "muscle_group": _text(muscle, "группа мышц", MAX_MUSCLE) if muscle else None,
+                    "muscle_group": _text(raw_exercise.get("m"), "группа мышц", MAX_MUSCLE),
                     "sets": _reps(raw_exercise.get("s"), name),
                 }
             )

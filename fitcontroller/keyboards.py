@@ -135,6 +135,16 @@ def workout_days_keyboard(days: list[tuple[str, str]], back_to: str) -> InlineKe
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+def stats_keyboard(url: str, back_to: str) -> InlineKeyboardMarkup:
+    """Статистика ходит в бота по HTTP, sendData не нужен — значит инлайн-кнопка."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📊 Открыть статистику", web_app=WebAppInfo(url=url))],
+            _back(back_to),
+        ]
+    )
+
+
 def confirm_delete_keyboard(workout_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[

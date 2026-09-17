@@ -27,3 +27,9 @@ def build_day_url(page_url: str, api_url: str, day_id: int) -> str:
     """
     params = urlencode({"api": api_url.rstrip("/"), "day": day_id})
     return f"{cache_busted(page_url)}#{params}"
+
+
+def build_stats_url(page_url: str, api_url: str) -> str:
+    """Странице статистики нужен только адрес API — день она не открывает."""
+    params = urlencode({"api": api_url.rstrip("/")})
+    return f"{cache_busted(page_url)}#{params}"

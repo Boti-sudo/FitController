@@ -40,6 +40,41 @@ ORDER BY exercise_id, set_number
 """
 
 
+# Статистика: завершённые тренировки за период. Вес тела и даты — сырыми,
+# группировку по дням делает страница: только там известен часовой пояс пользователя.
+SELECT_FINISHED_SINCE = """
+SELECT s.session_id, s.started_at, s.finished_at, s.body_weight_kg, s.comment,
+       d.title AS day_title, w.title AS workout_title
+FROM workout_sessions s
+LEFT JOIN workout_days d ON d.day_id = s.day_id
+LEFT JOIN workouts w     ON w.workout_id = d.workout_id
+WHERE s.user_id = ? AND s.finished_at IS NOT NULL AND s.finished_at >= ?
+ORDER BY s.finished_at DESC
+"""
+
+# Группы мышц берём из фактически выполненных упражнений, а не из плана дня:
+# план могли отредактировать уже после тренировки.
+SELECT_MUSCLES_SINCE = """
+SELECT ss.session_id, e.muscle_group, MIN(e.position) AS position
+FROM session_sets ss
+JOIN exercises e          ON e.exercise_id = ss.exercise_id
+JOIN workout_sessions s   ON s.session_id = ss.session_id
+WHERE s.user_id = ? AND s.finished_at IS NOT NULL AND s.finished_at >= ?
+  AND e.muscle_group IS NOT NULL AND e.muscle_group <> ''
+GROUP BY ss.session_id, e.muscle_group
+ORDER BY position
+"""
+
+SELECT_SESSION_DETAIL = """
+SELECT e.exercise_id, e.name, e.muscle_group, e.position,
+       ss.set_number, ss.reps, ss.weight_kg
+FROM session_sets ss
+JOIN exercises e ON e.exercise_id = ss.exercise_id
+WHERE ss.session_id = ?
+ORDER BY e.position, ss.set_number
+"""
+
+
 async def get_day_plan(day_id: int, user_id: int) -> dict | None:
     """План тренировочного дня: упражнения с запланированными подходами."""
     async with connect() as db:
@@ -275,3 +310,70 @@ async def list_sessions(user_id: int) -> list[dict]:
         ) as cursor:
             rows = await cursor.fetchall()
     return [dict(row) for row in rows]
+
+
+async def list_finished_sessions(user_id: int, since: str) -> list[dict]:
+    """Завершённые тренировки начиная с даты: для графика веса и списка тренировок."""
+    async with connect() as db:
+        async with db.execute(SELECT_FINISHED_SINCE, (user_id, since)) as cursor:
+            rows = await cursor.fetchall()
+        async with db.execute(SELECT_MUSCLES_SINCE, (user_id, since)) as cursor:
+            muscles = await cursor.fetchall()
+
+    by_session: dict[int, list[str]] = {}
+    for row in muscles:
+        by_session.setdefault(row["session_id"], []).append(row["muscle_group"])
+
+    sessions = []
+    for row in rows:
+        session = dict(row)
+        session["muscle_groups"] = by_session.get(row["session_id"], [])
+        sessions.append(session)
+    return sessions
+
+
+async def get_session_detail(session_id: int, user_id: int) -> dict | None:
+    """Одна тренировка целиком: упражнения с подходами и рабочими весами."""
+    async with connect() as db:
+        async with db.execute(
+            """
+            SELECT s.session_id, s.started_at, s.finished_at, s.body_weight_kg, s.comment,
+                   d.title AS day_title, w.title AS workout_title
+            FROM workout_sessions s
+            LEFT JOIN workout_days d ON d.day_id = s.day_id
+            LEFT JOIN workouts w     ON w.workout_id = d.workout_id
+            WHERE s.session_id = ? AND s.user_id = ?
+            """,
+            (session_id, user_id),
+        ) as cursor:
+            session = await cursor.fetchone()
+        if session is None:
+            return None
+
+        async with db.execute(SELECT_SESSION_DETAIL, (session_id,)) as cursor:
+            rows = await cursor.fetchall()
+
+    exercises: list[dict] = []
+    by_id: dict[int, dict] = {}
+    for row in rows:
+        exercise = by_id.get(row["exercise_id"])
+        if exercise is None:
+            exercise = {
+                "exercise_id": row["exercise_id"],
+                "name": row["name"],
+                "muscle_group": row["muscle_group"],
+                "sets": [],
+            }
+            by_id[row["exercise_id"]] = exercise
+            exercises.append(exercise)
+        exercise["sets"].append(
+            {
+                "set_number": row["set_number"],
+                "reps": row["reps"],
+                "weight_kg": row["weight_kg"],
+            }
+        )
+
+    result = dict(session)
+    result["exercises"] = exercises
+    return result

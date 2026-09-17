@@ -6,7 +6,7 @@ from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import CallbackQuery, Message
 
-from config import API_PUBLIC_URL, WEBAPP_URL, WORKOUT_WEBAPP_URL
+from config import API_PUBLIC_URL, STATS_WEBAPP_URL, WEBAPP_URL, WORKOUT_WEBAPP_URL
 from fitcontroller.db import delete_workout, get_workout, list_workouts, set_archived
 from fitcontroller.keyboards import (
     archive_keyboard,
@@ -16,6 +16,7 @@ from fitcontroller.keyboards import (
     main_menu_keyboard,
     manual_keyboard,
     pick_keyboard,
+    stats_keyboard,
     webapp_keyboard,
     workout_days_keyboard,
     workouts_keyboard,
@@ -259,7 +260,27 @@ async def show_manual(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "menu:stats")
 async def show_stats(callback: CallbackQuery) -> None:
-    await _render(callback, f"📊 Статистика\n\n{SOON_TEXT}", back_keyboard("menu:main"))
+    # Без адресов страницы и сервера кнопка открыла бы пустоту — как и у тренировок.
+    if not (STATS_WEBAPP_URL and API_PUBLIC_URL):
+        await _render(
+            callback,
+            "📊 Статистика\n\n"
+            "Адрес мини-аппа или сервера не задан — "
+            "пропиши STATS_WEBAPP_URL и API_PUBLIC_URL в config.py.",
+            back_keyboard("menu:main"),
+        )
+        return
+
+    from fitcontroller.handlers.workout import build_stats_url
+
+    url = build_stats_url(STATS_WEBAPP_URL, API_PUBLIC_URL)
+    logger.info("user_id=%s открыл статистику", callback.from_user.id)
+    await _render(
+        callback,
+        "📊 Статистика\n\n"
+        "Прогресс веса и список тренировок — в мини-аппе.",
+        stats_keyboard(url, "menu:main"),
+    )
 
 
 @router.callback_query(F.data == "create:ai")
