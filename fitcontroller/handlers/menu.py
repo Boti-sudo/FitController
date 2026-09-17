@@ -72,12 +72,10 @@ async def send_main_menu(message: Message) -> None:
 
 
 def _format_exercise(exercise: dict) -> str:
+    """Список в чате — только состав дня. Подходы и повторения показывает мини-апп."""
     line = f"{exercise['position']}. {exercise['name']}"
     if exercise["muscle_group"]:
         line += f" ({exercise['muscle_group']})"
-    if exercise["sets"]:
-        reps = ", ".join(str(item["reps"]) for item in exercise["sets"])
-        line += f" — {len(exercise['sets'])}×[{reps}]"
     return line
 
 
