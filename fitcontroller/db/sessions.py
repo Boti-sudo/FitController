@@ -445,3 +445,89 @@ async def save_progress(session_id: int, user_id: int, sets: list[dict]) -> None
         await db.commit()
 
     logger.debug("Progress saved for session_id=%s (%s подходов)", session_id, len(sets))
+
+
+async def get_latest_body_weight(user_id: int) -> dict | None:
+    """Последнее взвешивание из завершённых тренировок — актуальнее анкеты."""
+    async with connect() as db:
+        async with db.execute(
+            """
+            SELECT body_weight_kg, finished_at
+            FROM workout_sessions
+            WHERE user_id = ? AND finished_at IS NOT NULL AND body_weight_kg IS NOT NULL
+            ORDER BY finished_at DESC
+            LIMIT 1
+            """,
+            (user_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+    return dict(row) if row else None
+
+
+# Незакрытые тренировки пользователя: на них вешается кнопка «продолжить».
+SELECT_OPEN_SESSIONS = """
+SELECT s.session_id, s.started_at, s.day_id,
+       d.title AS day_title, w.workout_id, w.title AS workout_title
+FROM workout_sessions s
+JOIN workout_days d ON d.day_id = s.day_id
+JOIN workouts w     ON w.workout_id = d.workout_id
+WHERE s.user_id = ? AND s.finished_at IS NULL
+  AND s.started_at >= datetime('now', '-12 hours')
+ORDER BY s.started_at DESC
+"""
+
+
+async def list_open_sessions(user_id: int) -> list[dict]:
+    """Начатые и не закрытые тренировки за последние 12 часов."""
+    async with connect() as db:
+        async with db.execute(SELECT_OPEN_SESSIONS, (user_id,)) as cursor:
+            rows = await cursor.fetchall()
+    return [dict(row) for row in rows]
+
+
+# Забытые тренировки: висят дольше порога, и напоминание ещё не уходило.
+SELECT_STALE_SESSIONS = """
+SELECT s.session_id, s.user_id, s.started_at, s.day_id,
+       d.title AS day_title, w.title AS workout_title
+FROM workout_sessions s
+JOIN workout_days d ON d.day_id = s.day_id
+JOIN workouts w     ON w.workout_id = d.workout_id
+WHERE s.finished_at IS NULL
+  AND s.reminded_at IS NULL
+  AND s.started_at <= datetime('now', ?)
+ORDER BY s.started_at
+"""
+
+SELECT_SESSION_MUSCLES = """
+SELECT DISTINCT e.muscle_group, MIN(e.position) AS position
+FROM exercises e
+WHERE e.day_id = ? AND e.muscle_group IS NOT NULL AND e.muscle_group <> ''
+GROUP BY e.muscle_group
+ORDER BY position
+"""
+
+
+async def list_stale_sessions(hours: int) -> list[dict]:
+    """Тренировки, которые не закрыли за `hours` часов, с группами мышц дня."""
+    async with connect() as db:
+        async with db.execute(SELECT_STALE_SESSIONS, (f"-{hours} hours",)) as cursor:
+            rows = await cursor.fetchall()
+
+        sessions = []
+        for row in rows:
+            async with db.execute(SELECT_SESSION_MUSCLES, (row["day_id"],)) as cursor:
+                muscles = [item["muscle_group"] for item in await cursor.fetchall()]
+            session = dict(row)
+            session["muscle_groups"] = muscles
+            sessions.append(session)
+    return sessions
+
+
+async def mark_session_reminded(session_id: int) -> None:
+    """Отмечает, что про забытую тренировку уже написали."""
+    async with connect() as db:
+        await db.execute(
+            "UPDATE workout_sessions SET reminded_at = datetime('now') WHERE session_id = ?",
+            (session_id,),
+        )
+        await db.commit()

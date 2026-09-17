@@ -23,6 +23,7 @@ from fitcontroller.db import (
     get_last_session,
     get_session,
     get_session_detail,
+    get_user,
     list_finished_sessions,
     save_progress,
     start_session,
@@ -326,7 +327,14 @@ async def handle_stats(request: web.Request) -> web.Response:
     since = datetime.now(timezone.utc) - timedelta(days=STATS_DAYS)
 
     sessions = await list_finished_sessions(user_id, since.strftime("%Y-%m-%d %H:%M:%S"))
-    return web.json_response({"days": STATS_DAYS, "sessions": sessions})
+
+    # Вес из анкеты — первая точка графика: до первой тренировки других нет.
+    user = await get_user(user_id)
+    profile = None
+    if user and user["weight_kg"] is not None:
+        profile = {"weight_kg": user["weight_kg"], "measured_at": user["created_at"]}
+
+    return web.json_response({"days": STATS_DAYS, "sessions": sessions, "profile": profile})
 
 
 async def handle_stats_session(request: web.Request) -> web.Response:

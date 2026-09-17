@@ -25,5 +25,8 @@ REMINDER_TZ_OFFSET = int(os.getenv("REMINDER_TZ_OFFSET", "3"))
 REMINDER_HOURS = (10, 20)
 REMINDER_INTERVAL_MINUTES = int(os.getenv("REMINDER_INTERVAL_MINUTES", "30"))
 
+# Через сколько часов напомнить о незакрытой тренировке.
+FORGOTTEN_AFTER_HOURS = int(os.getenv("FORGOTTEN_AFTER_HOURS", "3"))
+
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN is not set.")

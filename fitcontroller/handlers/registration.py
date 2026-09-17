@@ -1,12 +1,14 @@
 import logging
+from datetime import datetime, timedelta
 
 from aiogram import F, Router
 from aiogram.filters import Command, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
 
-from fitcontroller.db import get_user, upsert_user
+from fitcontroller.db import get_latest_body_weight, get_user, upsert_user
 from fitcontroller.handlers.menu import send_main_menu
+from config import REMINDER_TZ_OFFSET
 from fitcontroller.db import GENDERS, GOALS
 from fitcontroller.keyboards import genders_keyboard, goals_keyboard
 from fitcontroller.states import Registration
@@ -68,7 +70,11 @@ async def cmd_profile(message: Message) -> None:
     if not user:
         await message.answer("Анкета ещё не заполнена. Нажми /start")
         return
-    await message.answer(_format_profile(user))
+
+    # Вес из анкеты быстро устаревает: если человек взвешивался на тренировке,
+    # показываем последнее измерение, а не то, что он вписал при регистрации.
+    latest = await get_latest_body_weight(message.from_user.id)
+    await message.answer(_format_profile(user, latest))
 
 
 @router.message(Registration.name, F.text)
@@ -196,12 +202,23 @@ async def process_unexpected(message: Message) -> None:
     await message.answer("Ответь, пожалуйста, текстом.")
 
 
-def _format_profile(user: dict) -> str:
+def _weight_line(user: dict, latest: dict | None) -> str:
+    if not latest:
+        return f"Вес: {user['weight_kg']:g} кг (из анкеты)"
+
+    # Даты в базе в UTC — переводим в местные, иначе вечерняя тренировка
+    # покажется вчерашней.
+    measured = datetime.strptime(latest["finished_at"], "%Y-%m-%d %H:%M:%S")
+    measured += timedelta(hours=REMINDER_TZ_OFFSET)
+    return f"Вес: {latest['body_weight_kg']:g} кг (взвешивание {measured:%d.%m.%Y})"
+
+
+def _format_profile(user: dict, latest: dict | None = None) -> str:
     return (
         f"Имя: {user['name']}\n"
         f"Пол: {user['gender'] or '—'}\n"
         f"Возраст: {user['age']}\n"
         f"Рост: {user['height_cm']} см\n"
-        f"Вес: {user['weight_kg']:g} кг\n"
+        f"{_weight_line(user, latest)}\n"
         f"Цель: {user['goal']}"
     )

@@ -48,9 +48,21 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def workouts_keyboard(workouts: list[dict]) -> InlineKeyboardMarkup:
+def resume_rows(resume: list[tuple[str, str]]) -> list[list[InlineKeyboardButton]]:
+    """Кнопки возврата в незакрытую тренировку: (подпись, адрес мини-аппа)."""
+    return [
+        [InlineKeyboardButton(text=f"\u23f1 Продолжить: {title}", web_app=WebAppInfo(url=url))]
+        for title, url in resume
+    ]
+
+
+def workouts_keyboard(
+    workouts: list[dict],
+    resume: list[tuple[str, str]] | None = None,
+) -> InlineKeyboardMarkup:
     """Папки с программами + действия, которые доступны всегда."""
-    rows = [
+    rows = resume_rows(resume or [])
+    rows += [
         [
             InlineKeyboardButton(
                 text=f"📁 {workout['title']}",
@@ -120,14 +132,19 @@ def manual_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def workout_days_keyboard(days: list[tuple[str, str]], back_to: str) -> InlineKeyboardMarkup:
+def workout_days_keyboard(
+    days: list[tuple[str, str]],
+    back_to: str,
+    resume: list[tuple[str, str]] | None = None,
+) -> InlineKeyboardMarkup:
     """Кнопка на каждый тренировочный день: (название, адрес мини-аппа).
 
     Инлайн, а не reply-клавиатура: мини-апп тренировки общается с ботом
     по HTTP, sendData ему не нужен, а инлайн-кнопки ничего не оставляют
     висеть внизу экрана.
     """
-    rows = [
+    rows = resume_rows(resume or [])
+    rows += [
         [InlineKeyboardButton(text=f"▶️ {title}", web_app=WebAppInfo(url=url))]
         for title, url in days
     ]

@@ -72,6 +72,21 @@ async def _drop_legacy_sessions(db: aiosqlite.Connection) -> None:
     logger.warning("Dropped legacy workout_sessions table (was empty)")
 
 
+async def _add_missing_columns(db: aiosqlite.Connection) -> None:
+    """Дописывает колонки, появившиеся позже таблицы.
+
+    CREATE TABLE IF NOT EXISTS существующую таблицу не трогает, а данные в ней
+    уже есть — поэтому недостающее добавляем отдельным ALTER.
+    """
+    additions = (("workout_sessions", "reminded_at", "TEXT"),)
+
+    for table, column, kind in additions:
+        columns = await _columns(db, table)
+        if columns and column not in columns:
+            await db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
+            logger.warning("Added column %s.%s", table, column)
+
+
 async def _fill_reference_tables(db: aiosqlite.Connection) -> None:
     for table, values in REFERENCE_DATA:
         await db.executemany(
@@ -90,6 +105,7 @@ async def init_db() -> None:
         await _drop_legacy_sessions(db)
         for statement in TABLES:
             await db.execute(statement)
+        await _add_missing_columns(db)
         await _fill_reference_tables(db)
         await db.commit()
     logger.info("Database ready at %s", DB_PATH)

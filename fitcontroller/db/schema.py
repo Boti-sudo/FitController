@@ -121,7 +121,8 @@ CREATE TABLE IF NOT EXISTS workout_sessions (
     finished_at    TEXT,
     body_weight_kg REAL,
     comment        TEXT,
-    created_at     TEXT    NOT NULL DEFAULT (datetime('now'))
+    created_at     TEXT    NOT NULL DEFAULT (datetime('now')),
+    reminded_at    TEXT
 )
 """
 

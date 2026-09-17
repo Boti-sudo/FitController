@@ -7,7 +7,13 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import CallbackQuery, Message
 
 from config import API_PUBLIC_URL, STATS_WEBAPP_URL, WEBAPP_URL, WORKOUT_WEBAPP_URL
-from fitcontroller.db import delete_workout, get_workout, list_workouts, set_archived
+from fitcontroller.db import (
+    delete_workout,
+    get_workout,
+    list_open_sessions,
+    list_workouts,
+    set_archived,
+)
 from fitcontroller.keyboards import (
     archive_keyboard,
     back_keyboard,
@@ -99,10 +105,35 @@ async def show_main_menu(callback: CallbackQuery) -> None:
     await _render(callback, MAIN_MENU_TEXT, main_menu_keyboard())
 
 
+async def _open_sessions(user_id: int, workout_id: int | None = None) -> list[tuple[str, str]]:
+    """Незакрытые тренировки как пары (подпись, адрес мини-аппа).
+
+    Пусто, если адреса мини-аппа или сервера нет: кнопка вела бы в никуда.
+    """
+    if not (WORKOUT_WEBAPP_URL and API_PUBLIC_URL):
+        return []
+
+    from fitcontroller.handlers.workout import build_day_url
+
+    sessions = await list_open_sessions(user_id)
+    if workout_id is not None:
+        sessions = [row for row in sessions if row["workout_id"] == workout_id]
+
+    return [
+        (
+            row["day_title"] if workout_id is not None
+            else f"{row['workout_title']} / {row['day_title']}",
+            build_day_url(WORKOUT_WEBAPP_URL, API_PUBLIC_URL, row["day_id"]),
+        )
+        for row in sessions
+    ]
+
+
 async def _show_workouts(callback: CallbackQuery) -> None:
     workouts = await list_workouts(callback.from_user.id)
+    resume = await _open_sessions(callback.from_user.id)
     text = "Твои программы:" if workouts else NO_WORKOUTS_TEXT
-    await _render(callback, text, workouts_keyboard(workouts))
+    await _render(callback, text, workouts_keyboard(workouts, resume))
 
 
 async def _show_archive(callback: CallbackQuery) -> None:
@@ -150,8 +181,9 @@ async def open_workout(callback: CallbackQuery) -> None:
         len(days),
         days[0][1],
     )
+    resume = await _open_sessions(callback.from_user.id, workout["workout_id"])
     text = f"{_format_workout(workout)}\n\nВыбери тренировочный день:"
-    await _render(callback, text, workout_days_keyboard(days, back_to))
+    await _render(callback, text, workout_days_keyboard(days, back_to, resume))
 
 
 @router.callback_query(F.data == "wk:archive_list")
