@@ -139,6 +139,7 @@ def workout_days_keyboard(
     days: list[tuple[str, str]],
     back_to: str,
     resume: list[tuple[str, str]] | None = None,
+    edit_target: int | None = None,
 ) -> InlineKeyboardMarkup:
     """Кнопка на каждый тренировочный день: (название, адрес мини-аппа).
 
@@ -151,8 +152,33 @@ def workout_days_keyboard(
         [InlineKeyboardButton(text=f"▶️ {title}", web_app=WebAppInfo(url=url))]
         for title, url in days
     ]
+    if edit_target is not None:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="✏️ Редактировать тренировочный день",
+                    callback_data=f"wk:days:{edit_target}",
+                )
+            ]
+        )
     rows.append(_back(back_to))
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def edit_days_keyboard(days: list[tuple[str, str]]) -> ReplyKeyboardMarkup:
+    """Выбор дня для правки.
+
+    Reply-клавиатура, а не инлайн: конструктор возвращает данные через
+    WebApp.sendData(), а он работает только у мини-аппов, открытых отсюда.
+    """
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=f"✏️ {title}", web_app=WebAppInfo(url=url))]
+            for title, url in days
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True,
+    )
 
 
 def stats_keyboard(url: str, back_to: str) -> InlineKeyboardMarkup:

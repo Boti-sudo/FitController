@@ -26,6 +26,7 @@ from fitcontroller.db.workouts import (
     list_workouts,
     save_training_day,
     set_archived,
+    update_training_day,
 )
 
 __all__ = [
@@ -57,5 +58,6 @@ __all__ = [
     "save_training_day",
     "set_archived",
     "start_session",
+    "update_training_day",
     "upsert_user",
 ]

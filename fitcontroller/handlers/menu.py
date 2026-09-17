@@ -22,6 +22,7 @@ from fitcontroller.keyboards import (
     create_keyboard,
     main_menu_keyboard,
     manual_keyboard,
+    edit_days_keyboard,
     pick_keyboard,
     stats_keyboard,
     support_keyboard,
@@ -202,7 +203,43 @@ async def open_workout(callback: CallbackQuery) -> None:
         return
 
     text = f"{_format_workout(workout)}\n\nВыбери тренировочный день:"
-    await _render(callback, text, workout_days_keyboard(days, back_to))
+    await _render(
+        callback,
+        text,
+        workout_days_keyboard(days, back_to, edit_target=workout["workout_id"]),
+    )
+
+
+@router.callback_query(F.data.startswith("wk:days:"))
+async def choose_day_to_edit(callback: CallbackQuery) -> None:
+    """Список дней папки на reply-клавиатуре: только оттуда работает sendData."""
+    workout_id = int(callback.data.rsplit(":", 1)[1])
+    workout = await get_workout(workout_id, callback.from_user.id)
+    if workout is None:
+        await callback.answer("Программа не найдена.", show_alert=True)
+        return
+
+    if not (WEBAPP_URL and API_PUBLIC_URL):
+        await callback.answer(
+            "Редактор недоступен: не задан адрес мини-аппа или сервера.", show_alert=True
+        )
+        return
+
+    if not workout["days"]:
+        await callback.answer("В этой программе пока нет дней.", show_alert=True)
+        return
+
+    from fitcontroller.handlers.workout import build_editor_url
+
+    days = [
+        (day["title"], build_editor_url(WEBAPP_URL, API_PUBLIC_URL, day["day_id"]))
+        for day in workout["days"]
+    ]
+    await callback.message.answer(
+        f"«{workout['title']}» — выбери день под полем ввода, чтобы открыть его в редакторе.",
+        reply_markup=edit_days_keyboard(days),
+    )
+    await callback.answer()
 
 
 @router.callback_query(F.data == "wk:archive_list")
@@ -363,11 +400,19 @@ async def open_editor(callback: CallbackQuery) -> None:
         )
         return
 
-    from fitcontroller.handlers.workout import cache_busted
+    from fitcontroller.handlers.workout import build_editor_url, cache_busted
+
+    # С адресом API конструктор покажет существующие папки; без него — только
+    # ручной ввод названия, но заполнить тренировку всё равно можно.
+    url = (
+        build_editor_url(WEBAPP_URL, API_PUBLIC_URL)
+        if API_PUBLIC_URL
+        else cache_busted(WEBAPP_URL)
+    )
 
     await callback.message.answer(
         "Жми «Начать заполнение» под полем ввода — заполнишь тренировку "
         "и она сама прилетит сюда.",
-        reply_markup=webapp_keyboard(cache_busted(WEBAPP_URL)),
+        reply_markup=webapp_keyboard(url),
     )
     await callback.answer()

@@ -200,3 +200,95 @@ async def set_archived(workout_id: int, user_id: int, archived: bool) -> None:
     logger.info("workout_id=%s archived=%s", workout_id, archived)
 
 
+
+
+async def update_training_day(
+    user_id: int,
+    day_id: int,
+    day_title: str,
+    exercises: list[dict],
+) -> None:
+    """Переписывает состав дня, сохраняя exercise_id уже существующих упражнений.
+
+    Удалять и создавать упражнения заново нельзя: на exercise_id завязан журнал
+    рабочих весов (session_sets с ON DELETE CASCADE), и вся история пропала бы.
+    Поэтому упражнения сопоставляются по позиции и обновляются на месте, а
+    удаляются только те, что человек действительно убрал из программы.
+    """
+    async with connect() as db:
+        async with db.execute(
+            """
+            SELECT d.day_id
+            FROM workout_days d
+            JOIN workouts w ON w.workout_id = d.workout_id
+            WHERE d.day_id = ? AND w.user_id = ?
+            """,
+            (day_id, user_id),
+        ) as cursor:
+            if await cursor.fetchone() is None:
+                raise PermissionError("день не принадлежит пользователю")
+
+        await db.execute(
+            "UPDATE workout_days SET title = ?, updated_at = datetime('now') WHERE day_id = ?",
+            (day_title, day_id),
+        )
+
+        async with db.execute(
+            "SELECT exercise_id, position FROM exercises WHERE day_id = ? ORDER BY position",
+            (day_id,),
+        ) as cursor:
+            existing = {row["position"]: row["exercise_id"] for row in await cursor.fetchall()}
+
+        for position, exercise in enumerate(exercises, start=1):
+            muscle = exercise.get("muscle_group") or None
+            exercise_id = existing.pop(position, None)
+
+            if exercise_id is None:
+                cursor = await db.execute(
+                    """
+                    INSERT INTO exercises (day_id, position, name, muscle_group)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (day_id, position, exercise["name"], muscle),
+                )
+                exercise_id = cursor.lastrowid
+            else:
+                await db.execute(
+                    "UPDATE exercises SET name = ?, muscle_group = ? WHERE exercise_id = ?",
+                    (exercise["name"], muscle, exercise_id),
+                )
+                # План подходов ни с чем не связан — его переписываем целиком.
+                await db.execute(
+                    "DELETE FROM exercise_sets WHERE exercise_id = ?", (exercise_id,)
+                )
+
+            reps_list = exercise.get("sets") or []
+            if reps_list:
+                await db.executemany(
+                    "INSERT INTO exercise_sets (exercise_id, set_number, reps) VALUES (?, ?, ?)",
+                    [
+                        (exercise_id, set_number, reps)
+                        for set_number, reps in enumerate(reps_list, start=1)
+                    ],
+                )
+
+        # Остались позиции, которых в новой версии нет, — упражнение убрали.
+        for exercise_id in existing.values():
+            await db.execute("DELETE FROM exercises WHERE exercise_id = ?", (exercise_id,))
+
+        await db.execute(
+            """
+            UPDATE workouts SET updated_at = datetime('now')
+            WHERE workout_id = (SELECT workout_id FROM workout_days WHERE day_id = ?)
+            """,
+            (day_id,),
+        )
+        await db.commit()
+
+    logger.info(
+        "Updated day_id=%s for user_id=%s: упражнений %s, удалено %s",
+        day_id,
+        user_id,
+        len(exercises),
+        len(existing),
+    )

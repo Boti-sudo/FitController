@@ -6,7 +6,7 @@ import logging
 from aiogram import F, Router
 from aiogram.types import Message, ReplyKeyboardRemove
 
-from fitcontroller.db import SOURCE_USER, save_training_day
+from fitcontroller.db import SOURCE_USER, save_training_day, update_training_day
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +111,55 @@ def _summary(workout_title: str, days: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def parse_edit_payload(raw: str) -> tuple[int, str, list[dict]]:
+    """Разбирает правку одного дня: (day_id, название дня, упражнения)."""
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as err:
+        raise PayloadError("не удалось разобрать данные") from err
+
+    if not isinstance(data, dict):
+        raise PayloadError("ожидался объект")
+
+    day_id = data.get("id")
+    if not isinstance(day_id, int) or isinstance(day_id, bool):
+        raise PayloadError("не указан тренировочный день")
+
+    day_title = _text(data.get("n"), "название дня", MAX_TITLE)
+
+    raw_exercises = data.get("e")
+    if not isinstance(raw_exercises, list) or not raw_exercises:
+        raise PayloadError(f"в дне «{day_title}» нет упражнений")
+    if len(raw_exercises) > MAX_EXERCISES:
+        raise PayloadError(f"в дне «{day_title}» больше {MAX_EXERCISES} упражнений")
+
+    exercises = []
+    for raw_exercise in raw_exercises:
+        if not isinstance(raw_exercise, dict):
+            raise PayloadError("упражнение пришло не объектом")
+
+        name = _text(raw_exercise.get("n"), "название упражнения", MAX_TITLE)
+        muscle = raw_exercise.get("m")
+        exercises.append(
+            {
+                "name": name,
+                "muscle_group": _text(muscle, "группа мышц", MAX_MUSCLE) if muscle else None,
+                "sets": _reps(raw_exercise.get("s"), name),
+            }
+        )
+
+    return day_id, day_title, exercises
+
+
+def is_edited_day(message: Message) -> bool:
+    """Payload из редактора существующего дня: помечен k="edit"."""
+    try:
+        data = json.loads(message.web_app_data.data)
+    except (json.JSONDecodeError, TypeError):
+        return False
+    return isinstance(data, dict) and data.get("k") == "edit"
+
+
 def is_new_workout(message: Message) -> bool:
     """Payload из редактора создания: помечен k="new" (или без метки — старая версия)."""
     try:
@@ -118,6 +167,43 @@ def is_new_workout(message: Message) -> bool:
     except (json.JSONDecodeError, TypeError):
         return False
     return isinstance(data, dict) and data.get("k", "new") == "new"
+
+
+@router.message(F.web_app_data, is_edited_day)
+async def receive_edited_day(message: Message) -> None:
+    try:
+        day_id, day_title, exercises = parse_edit_payload(message.web_app_data.data)
+    except PayloadError as err:
+        logger.warning("Bad edit payload from user_id=%s: %s", message.from_user.id, err)
+        await message.answer(
+            f"Не смог сохранить изменения: {err}.\nПопробуй ещё раз.",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return
+
+    try:
+        await update_training_day(
+            user_id=message.from_user.id,
+            day_id=day_id,
+            day_title=day_title,
+            exercises=exercises,
+        )
+    except PermissionError:
+        await message.answer(
+            "Этот тренировочный день не найден.", reply_markup=ReplyKeyboardRemove()
+        )
+        return
+
+    sets_total = sum(len(exercise["sets"]) for exercise in exercises)
+    await message.answer(
+        f"Изменения сохранены: «{day_title}» — упражнений: {len(exercises)}, "
+        f"подходов: {sets_total}",
+        reply_markup=ReplyKeyboardRemove(),
+    )
+
+    from fitcontroller.handlers.menu import send_main_menu
+
+    await send_main_menu(message)
 
 
 @router.message(F.web_app_data, is_new_workout)

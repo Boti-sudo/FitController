@@ -26,6 +26,7 @@ from fitcontroller.db import (
     get_user,
     list_finished_sessions,
     list_open_sessions,
+    list_workouts,
     save_progress,
     start_session,
 )
@@ -342,6 +343,15 @@ async def handle_progress(request: web.Request) -> web.Response:
     return web.json_response({"saved": len(sets)})
 
 
+async def handle_workouts(request: web.Request) -> web.Response:
+    """Активные папки — конструктору, чтобы положить день в существующую."""
+    user_id = current_user_id(request)
+    workouts = await list_workouts(user_id)
+    return web.json_response(
+        {"workouts": [{"workout_id": w["workout_id"], "title": w["title"]} for w in workouts]}
+    )
+
+
 async def handle_stats(request: web.Request) -> web.Response:
     """Завершённые тренировки за полгода — сырьё для графика веса и списка."""
     user_id = current_user_id(request)
@@ -441,6 +451,7 @@ def create_app() -> web.Application:
     app.router.add_post("/api/session/start", handle_start)
     app.router.add_post("/api/session/finish", handle_finish)
     app.router.add_post("/api/session/progress", handle_progress)
+    app.router.add_get("/api/workouts", handle_workouts)
     app.router.add_get("/api/stats", handle_stats)
     app.router.add_get("/api/stats/session/{session_id}", handle_stats_session)
     app.router.add_get("/api/health", lambda request: web.json_response({"ok": True}))
