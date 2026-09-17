@@ -25,6 +25,7 @@ from fitcontroller.db import (
     get_session_detail,
     get_user,
     list_finished_sessions,
+    list_open_sessions,
     save_progress,
     start_session,
 )
@@ -131,6 +132,17 @@ async def handle_day(request: web.Request) -> web.Response:
             ],
         }
 
+    # Тренировка другого дня, оставшаяся открытой, блокирует старт этой.
+    blocked_by = None
+    if active is None:
+        others = [row for row in await list_open_sessions(user_id) if row["day_id"] != day_id]
+        if others:
+            blocked_by = {
+                "day_id": others[0]["day_id"],
+                "day_title": others[0]["day_title"],
+                "workout_title": others[0]["workout_title"],
+            }
+
     last = await get_last_session(day_id, user_id)
     previous: dict[tuple[int, int], float] = {}
     if last:
@@ -143,6 +155,7 @@ async def handle_day(request: web.Request) -> web.Response:
             "workout_title": plan["workout_title"],
             "day_title": plan["day_title"],
             "active_session": active_payload,
+            "blocked_by": blocked_by,
             "previous_comment": last["comment"] if last else None,
             "previous_finished_at": last["finished_at"] if last else None,
             "exercises": [
@@ -185,6 +198,14 @@ async def handle_start(request: web.Request) -> web.Response:
         logger.info("Возвращаем незакрытую session_id=%s", active["session_id"])
         return web.json_response(
             {"session_id": active["session_id"], "started_at": active["started_at"]}
+        )
+
+    others = [row for row in await list_open_sessions(user_id) if row["day_id"] != day_id]
+    if others:
+        raise ApiError(
+            409,
+            f"сначала заверши тренировку «{others[0]['workout_title']} / "
+            f"{others[0]['day_title']}»",
         )
 
     try:

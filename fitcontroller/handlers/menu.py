@@ -181,9 +181,20 @@ async def open_workout(callback: CallbackQuery) -> None:
         len(days),
         days[0][1],
     )
-    resume = await _open_sessions(callback.from_user.id, workout["workout_id"])
+    # Незакрытая тренировка — хоть в этой папке, хоть в соседней — перекрывает
+    # выбор дня: сначала её надо завершить.
+    resume = await _open_sessions(callback.from_user.id)
+    if resume:
+        text = (
+            f"{_format_workout(workout)}\n\n"
+            "У тебя есть незавершённая тренировка. Заверши её, "
+            "прежде чем начинать новую."
+        )
+        await _render(callback, text, workout_days_keyboard([], back_to, resume))
+        return
+
     text = f"{_format_workout(workout)}\n\nВыбери тренировочный день:"
-    await _render(callback, text, workout_days_keyboard(days, back_to, resume))
+    await _render(callback, text, workout_days_keyboard(days, back_to))
 
 
 @router.callback_query(F.data == "wk:archive_list")
