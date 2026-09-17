@@ -139,7 +139,7 @@ def workout_days_keyboard(
     days: list[tuple[str, str]],
     back_to: str,
     resume: list[tuple[str, str]] | None = None,
-    edit_target: int | None = None,
+    workout_id: int | None = None,
 ) -> InlineKeyboardMarkup:
     """Кнопка на каждый тренировочный день: (название, адрес мини-аппа).
 
@@ -152,12 +152,20 @@ def workout_days_keyboard(
         [InlineKeyboardButton(text=f"▶️ {title}", web_app=WebAppInfo(url=url))]
         for title, url in days
     ]
-    if edit_target is not None:
+    if workout_id is not None:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="➕ Добавить тренировочный день",
+                    callback_data=f"wk:add:{workout_id}",
+                )
+            ]
+        )
         rows.append(
             [
                 InlineKeyboardButton(
                     text="✏️ Редактировать тренировочный день",
-                    callback_data=f"wk:days:{edit_target}",
+                    callback_data=f"wk:days:{workout_id}",
                 )
             ]
         )

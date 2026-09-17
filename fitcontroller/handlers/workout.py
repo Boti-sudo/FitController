@@ -35,13 +35,21 @@ def build_stats_url(page_url: str, api_url: str) -> str:
     return f"{cache_busted(page_url)}#{params}"
 
 
-def build_editor_url(page_url: str, api_url: str, day_id: int | None = None) -> str:
+def build_editor_url(
+    page_url: str,
+    api_url: str,
+    day_id: int | None = None,
+    workout_id: int | None = None,
+) -> str:
     """Адрес конструктора.
 
-    Без day_id — создание: страница подтянет список папок, чтобы положить день
-    в существующую. С day_id — правка: страница загрузит день и заполнит форму.
+    Без параметров — создание с нуля: страница подтянет список папок.
+    С workout_id — создание внутри конкретной папки: её название подставится
+    в поле, но остаётся редактируемым. С day_id — правка существующего дня.
     """
     params = {"api": api_url.rstrip("/")}
     if day_id is not None:
         params["day"] = day_id
+    if workout_id is not None:
+        params["wk"] = workout_id
     return f"{cache_busted(page_url)}#{urlencode(params)}"
