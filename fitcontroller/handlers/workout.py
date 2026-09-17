@@ -52,4 +52,8 @@ def build_editor_url(
         params["day"] = day_id
     if workout_id is not None:
         params["wk"] = workout_id
-    return f"{cache_busted(page_url)}#{urlencode(params)}"
+
+    # Не в хеш, как у мини-аппа тренировки: конструктор открывается кнопкой
+    # клавиатуры, а ей Telegram фрагмент не передаёт — страница получала пустые
+    # параметры и молча работала как обычное создание.
+    return f"{cache_busted(page_url)}&{urlencode(params)}"
