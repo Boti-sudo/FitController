@@ -169,6 +169,14 @@ def workout_days_keyboard(
                 )
             ]
         )
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="🏷 Переименовать комплекс",
+                    callback_data=f"wk:rename:{workout_id}",
+                )
+            ]
+        )
     rows.append(_back(back_to))
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -191,7 +199,7 @@ def editor_keyboard(url: str, back_to: str) -> InlineKeyboardMarkup:
     """Кнопка запуска конструктора."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="✍️ Открыть конструктор", web_app=WebAppInfo(url=url))],
+            [InlineKeyboardButton(text="✍️ Создать программу", web_app=WebAppInfo(url=url))],
             _back(back_to),
         ]
     )

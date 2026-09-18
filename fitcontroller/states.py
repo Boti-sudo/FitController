@@ -10,3 +10,9 @@ class Registration(StatesGroup):
     height = State()
     weight = State()
     goal = State()
+
+
+class RenameWorkout(StatesGroup):
+    """Ввод нового названия комплекса."""
+
+    title = State()

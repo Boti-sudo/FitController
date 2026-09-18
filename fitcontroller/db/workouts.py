@@ -2,6 +2,8 @@
 
 import logging
 
+import aiosqlite
+
 from fitcontroller.db.connection import connect
 
 logger = logging.getLogger(__name__)
@@ -292,3 +294,31 @@ async def update_training_day(
         len(exercises),
         len(existing),
     )
+
+
+async def rename_workout(workout_id: int, user_id: int, title: str) -> bool:
+    """Переименовывает комплекс. False — если такое название уже занято.
+
+    Дни и упражнения привязаны к workout_id, поэтому переименование ничего
+    не рвёт: меняется только подпись папки.
+    """
+    async with connect() as db:
+        try:
+            cursor = await db.execute(
+                """
+                UPDATE workouts
+                SET title = ?, updated_at = datetime('now')
+                WHERE workout_id = ? AND user_id = ?
+                """,
+                (title, workout_id, user_id),
+            )
+        except aiosqlite.IntegrityError:
+            # UNIQUE (user_id, title): у человека уже есть папка с таким именем.
+            return False
+
+        await db.commit()
+        renamed = cursor.rowcount > 0
+
+    if renamed:
+        logger.info("Renamed workout_id=%s for user_id=%s", workout_id, user_id)
+    return renamed

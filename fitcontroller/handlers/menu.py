@@ -5,6 +5,7 @@ import logging
 from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from config import API_PUBLIC_URL, STATS_WEBAPP_URL, WEBAPP_URL, WORKOUT_WEBAPP_URL
@@ -13,8 +14,10 @@ from fitcontroller.db import (
     get_workout,
     list_open_sessions,
     list_workouts,
+    rename_workout,
     set_archived,
 )
+from fitcontroller.states import RenameWorkout
 from fitcontroller.keyboards import (
     archive_keyboard,
     back_keyboard,
@@ -209,6 +212,74 @@ async def open_workout(callback: CallbackQuery) -> None:
         text,
         workout_days_keyboard(days, back_to, workout_id=workout["workout_id"]),
     )
+
+
+MAX_TITLE = 64
+
+
+@router.callback_query(F.data.startswith("wk:rename:"))
+async def ask_new_title(callback: CallbackQuery, state: FSMContext) -> None:
+    workout_id = int(callback.data.rsplit(":", 1)[1])
+    workout = await get_workout(workout_id, callback.from_user.id)
+    if workout is None:
+        await callback.answer("Программа не найдена.", show_alert=True)
+        return
+
+    await state.set_state(RenameWorkout.title)
+    await state.update_data(workout_id=workout_id)
+    await callback.message.answer(
+        f"Впиши новое название для «{workout['title']}».\n"
+        "Чтобы передумать — /cancel"
+    )
+    await callback.answer()
+
+
+@router.message(RenameWorkout.title, Command("cancel"))
+async def cancel_rename(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    await message.answer("Название оставил как было.")
+    await send_main_menu(message)
+
+
+@router.message(RenameWorkout.title, F.text)
+async def apply_new_title(message: Message, state: FSMContext) -> None:
+    title = message.text.strip()
+    if not title:
+        await message.answer("Название не может быть пустым. Впиши ещё раз.")
+        return
+    if len(title) > MAX_TITLE:
+        await message.answer(f"Слишком длинно — до {MAX_TITLE} символов. Впиши покороче.")
+        return
+
+    data = await state.get_data()
+    workout_id = data["workout_id"]
+
+    renamed = await rename_workout(workout_id, message.from_user.id, title)
+    if not renamed:
+        # Либо занято другой папкой, либо программы уже нет — обе причины
+        # разбираются одним запросом.
+        workout = await get_workout(workout_id, message.from_user.id)
+        if workout is None:
+            await state.clear()
+            await message.answer("Программа не найдена.")
+            await send_main_menu(message)
+            return
+        await message.answer(
+            f"Комплекс с названием «{title}» уже есть. Впиши другое."
+        )
+        return
+
+    await state.clear()
+    await message.answer(f"Готово, теперь это «{title}».")
+
+    workout = await get_workout(workout_id, message.from_user.id)
+    await message.answer(_format_workout(workout))
+    await send_main_menu(message)
+
+
+@router.message(RenameWorkout.title)
+async def rename_wrong_type(message: Message) -> None:
+    await message.answer("Пришли новое название текстом или отмени через /cancel")
 
 
 @router.callback_query(F.data.startswith("wk:add:"))
