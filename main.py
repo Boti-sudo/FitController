@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 COMMANDS = [
     BotCommand(command="start", description="Начать (Главное меню)"),
     BotCommand(command="profile", description="Мой профиль"),
-    BotCommand(command="reset", description="Заполнить анкету заново"),
+    BotCommand(command="reset", description="Изменить мои данные"),
     BotCommand(command="support", description="Поддержка"),
 ]
 
