@@ -15,8 +15,11 @@ def cache_busted(page_url: str) -> str:
     ссылки, а не при старте бота: каждое открытие папки даёт свежий адрес.
     Для продакшена сюда лучше подставить номер версии страницы.
     """
-    separator = "&" if "?" in page_url else "?"
-    return f"{page_url.rstrip('/')}/{separator}v={int(time.time())}"
+    # Слеш дописываем только там, где параметров ещё не было: в адресе с query
+    # он влез бы внутрь последнего значения (…?theme=dark/&v=…).
+    if "?" in page_url:
+        return f"{page_url}&v={int(time.time())}"
+    return f"{page_url.rstrip('/')}/?v={int(time.time())}"
 
 
 def build_day_url(page_url: str, api_url: str, day_id: int) -> str:
